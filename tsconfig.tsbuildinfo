@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/geometry.ts","./src/main.tsx","./src/store.ts","./src/types.ts","./src/components/Connection3D.tsx","./src/components/LayerPlane.tsx","./src/components/Node3D.tsx","./src/components/Panel.tsx","./src/components/Scene.tsx","./src/components/Scene2D.tsx"],"version":"5.9.3"}
