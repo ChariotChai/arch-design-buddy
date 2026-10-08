@@ -16,16 +16,14 @@ export default function LayerPlane({ layer, index, active, y }: Props) {
   const { tool, addNode, setActiveLayer, setTool, nodeType } = useStore();
   const size = GRID_SIZE * CELL;
 
-  // 网格线材质
+  // 稀疏主网格线（每 5 格一条）
   const gridLines = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     const positions: number[] = [];
     const half = size / 2;
-    for (let i = 0; i <= GRID_SIZE; i++) {
+    for (let i = 0; i <= GRID_SIZE; i += 5) {
       const p = -half + i * CELL;
-      // X 方向线（沿 Z 轴）
       positions.push(-half, 0, p, half, 0, p);
-      // Z 方向线（沿 X 轴）
       positions.push(p, 0, -half, p, 0, half);
     }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -77,9 +75,9 @@ export default function LayerPlane({ layer, index, active, y }: Props) {
         />
       </mesh>
 
-      {/* 网格线 */}
+      {/* 稀疏主网格线 */}
       <lineSegments geometry={gridLines}>
-        <lineBasicMaterial color={baseColor} transparent opacity={active ? 0.4 : 0.2} />
+        <lineBasicMaterial color={baseColor} transparent opacity={active ? 0.2 : 0.1} />
       </lineSegments>
 
       {/* 层边框 */}

@@ -123,16 +123,16 @@ export default function Scene2D() {
     ctx.moveTo(corners[0].sx, corners[0].sy);
     for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].sx, corners[i].sy);
     ctx.closePath();
-    ctx.fillStyle = layer.color + (active ? '22' : '10');
+    ctx.fillStyle = layer.color + (active ? '18' : '08');
     ctx.fill();
-    ctx.strokeStyle = layer.color + (active ? 'cc' : '66');
-    ctx.lineWidth = active ? 2 : 1;
+    ctx.strokeStyle = layer.color + (active ? '88' : '44');
+    ctx.lineWidth = active ? 1.5 : 0.8;
     ctx.stroke();
 
-    // 网格线
-    ctx.strokeStyle = layer.color + (active ? '33' : '1a');
+    // 稀疏主网格线（每 5 格一条）
+    ctx.strokeStyle = layer.color + (active ? '22' : '10');
     ctx.lineWidth = 0.5;
-    for (let i = 0; i <= GRID_SIZE; i++) {
+    for (let i = 0; i <= GRID_SIZE; i += 5) {
       const p = -half + i * CELL;
       const a = project(-half, y, p, scale, offsetX, offsetY);
       const b = project(half, y, p, scale, offsetX, offsetY);
