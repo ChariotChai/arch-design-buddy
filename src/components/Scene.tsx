@@ -1,4 +1,5 @@
 import { useRef, useState, useMemo, useEffect } from 'react';
+import type { MutableRefObject } from 'react';
 import { Canvas, useThree, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
@@ -158,12 +159,34 @@ function ConnectPreview() {
 }
 
 // 场景内容（在 Canvas 内部）
-function SceneContent() {
-  const { diagram, activeLayerId, setActiveLayer, tool, cancelConnect } = useStore();
+function SceneContent({ focusedLayerId }: { focusedLayerId: string | null }) {
+  const { diagram, activeLayerId } = useStore();
 
-  const handleCanvasClick = () => {
-    if (tool === 'connect') cancelConnect();
-  };
+  // 选中某层且不在聚焦模式时，其余层压暗成背景
+  const hasActiveLayer = !!activeLayerId && diagram.layers.some(l => l.id === activeLayerId);
+  const dimOthers = !focusedLayerId && hasActiveLayer;
+
+  // 聚焦时只渲染激活层，否则渲染全部层
+  const layersToRender = useMemo(
+    () => (focusedLayerId ? diagram.layers.filter(l => l.id === focusedLayerId) : diagram.layers),
+    [diagram.layers, focusedLayerId]
+  );
+
+  // 节点 id -> 所属层 id
+  const nodeLayerId = useMemo(() => {
+    const m = new Map<string, string>();
+    diagram.layers.forEach(l => l.nodes.forEach(n => m.set(n.id, l.id)));
+    return m;
+  }, [diagram.layers]);
+
+  // 聚焦时只保留层内连线；跨层连线在单层视角下没有可解释的走向，隐藏
+  const visibleConnections = useMemo(() => {
+    if (!focusedLayerId) return diagram.connections;
+    return diagram.connections.filter(
+      c => nodeLayerId.get(c.fromNodeId) === focusedLayerId &&
+           nodeLayerId.get(c.toNodeId) === focusedLayerId
+    );
+  }, [diagram.connections, focusedLayerId, nodeLayerId]);
 
   return (
     <group>
@@ -172,29 +195,38 @@ function SceneContent() {
       <directionalLight position={[10, 20, 10]} intensity={0.8} castShadow />
       <directionalLight position={[-10, 10, -10]} intensity={0.3} />
 
-      {/* 地面参考 */}
-      <gridHelper args={[GRID_SIZE * CELL * 1.5, GRID_SIZE, '#475569', '#334155']} position={[0, -0.5, 0]} />
-
-      {/* 各层 */}
-      {diagram.layers.map((layer, index) => (
-        <LayerPlane
-          key={layer.id}
-          layer={layer}
-          index={index}
-          active={activeLayerId === layer.id}
-          y={layerIndexToY(index)}
-        />
-      ))}
-
-      {/* 节点 */}
-      {diagram.layers.map((layer, index) =>
-        layer.nodes.map(node => (
-          <Node3D key={node.id} node={node} diagram={diagram} layerIndex={index} />
-        ))
+      {/* 地面参考：聚焦时由层自身的网格取代 */}
+      {!focusedLayerId && (
+        <gridHelper args={[GRID_SIZE * CELL * 1.5, GRID_SIZE, '#475569', '#334155']} position={[0, -0.5, 0]} />
       )}
 
+      {/* 各层 */}
+      {layersToRender.map((layer) => {
+        const index = diagram.layers.findIndex(l => l.id === layer.id);
+        return (
+          <LayerPlane
+            key={layer.id}
+            layer={layer}
+            index={index}
+            active={activeLayerId === layer.id}
+            focused={focusedLayerId === layer.id}
+            dimmed={dimOthers && activeLayerId !== layer.id}
+            y={layerIndexToY(index)}
+          />
+        );
+      })}
+
+      {/* 节点 */}
+      {layersToRender.map((layer) => {
+        const index = diagram.layers.findIndex(l => l.id === layer.id);
+        const dimmed = dimOthers && activeLayerId !== layer.id;
+        return layer.nodes.map(node => (
+          <Node3D key={node.id} node={node} diagram={diagram} layerIndex={index} dimmed={dimmed} />
+        ));
+      })}
+
       {/* 连线 */}
-      {diagram.connections.map(conn => (
+      {visibleConnections.map(conn => (
         <Connection3D key={conn.id} connection={conn} diagram={diagram} />
       ))}
 
@@ -206,8 +238,49 @@ function SceneContent() {
   );
 }
 
+// 聚焦模式切换时把相机摆到该层正上方，退出时回到等轴测视角
+function CameraRig({
+  focused,
+  focusY,
+  controlsRef,
+}: {
+  focused: boolean;
+  focusY: number;
+  controlsRef: MutableRefObject<any>;
+}) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (focused) {
+      // z 留一点微小偏移，避免正上方时方位角退化
+      camera.position.set(0, focusY + 30, 0.001);
+      controls?.target.set(0, focusY, 0);
+    } else {
+      camera.position.set(25, 25, 25);
+      controls?.target.set(0, 0, 0);
+    }
+    controls?.update();
+  }, [focused, focusY, camera, controlsRef]);
+
+  return null;
+}
+
 export default function Scene() {
   const [webgl] = useState(supportsWebGL);
+  const focusMode = useStore(s => s.focusMode);
+  const activeLayerId = useStore(s => s.activeLayerId);
+  const layers = useStore(s => s.diagram.layers);
+  const controlsRef = useRef<any>(null);
+
+  // 聚焦层：开启聚焦 + 有激活层 + 该层确实存在
+  const focusedLayerId =
+    focusMode && activeLayerId && layers.some(l => l.id === activeLayerId)
+      ? activeLayerId
+      : null;
+
+  const focusIndex = focusedLayerId ? layers.findIndex(l => l.id === focusedLayerId) : -1;
+  const focusY = focusIndex >= 0 ? layerIndexToY(focusIndex) : 0;
 
   if (!webgl) {
     return <Scene2D />;
@@ -227,18 +300,22 @@ export default function Scene() {
       <OrthographicCamera
         makeDefault
         position={[25, 25, 25]}
-        zoom={25}
+        zoom={focusedLayerId ? 36 : 25}
         near={-100}
         far={100}
       />
       <OrbitControls
+        ref={controlsRef}
         enableDamping
         dampingFactor={0.1}
         minZoom={10}
         maxZoom={80}
         maxPolarAngle={Math.PI / 2.1}
+        // 单层聚焦时锁定俯视：只保留平移与缩放，不允许旋转
+        enableRotate={!focusedLayerId}
       />
-      <SceneContent />
+      <CameraRig focused={!!focusedLayerId} focusY={focusY} controlsRef={controlsRef} />
+      <SceneContent focusedLayerId={focusedLayerId} />
     </Canvas>
   );
 }

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useStore } from '../store';
 import { Tool, NodeType, NODE_PRESETS, LAYER_COLORS } from '../types';
 
@@ -17,9 +17,27 @@ export default function Panel() {
     activeLayerId, setActiveLayer,
     addLayer, removeLayer, renameLayer, moveLayer,
     loadDiagram, clearDiagram,
+    focusMode, toggleFocusMode,
   } = useStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const activeLayer = diagram.layers.find(l => l.id === activeLayerId) ?? null;
+
+  // 聚焦层的层内 / 跨层连线统计，用于提示"隐藏了几条跨层连线"
+  const focusStats = useMemo(() => {
+    if (!focusMode || !activeLayer) return null;
+    const ids = new Set(activeLayer.nodes.map(n => n.id));
+    let intra = 0;
+    let cross = 0;
+    for (const c of diagram.connections) {
+      const fromIn = ids.has(c.fromNodeId);
+      const toIn = ids.has(c.toNodeId);
+      if (fromIn && toIn) intra++;
+      else if (fromIn || toIn) cross++;
+    }
+    return { nodes: activeLayer.nodes.length, intra, cross };
+  }, [focusMode, activeLayer, diagram.connections]);
 
   const handleExportJSON = () => {
     const data = JSON.stringify(diagram, null, 2);
@@ -104,6 +122,33 @@ export default function Panel() {
           <h3>图层</h3>
           <button className="btn-primary" onClick={addLayer}>+ 添加层</button>
         </div>
+
+        {/* 单层聚焦开关 */}
+        <button
+          className={`focus-btn ${focusMode ? 'on' : ''}`}
+          onClick={toggleFocusMode}
+          disabled={diagram.layers.length === 0}
+          title="只显示激活层，隐藏其他层与跨层连线（快捷键 F）"
+        >
+          <span className="focus-dot" />
+          <span className="focus-label">
+            {focusMode ? '只看当前层' : '显示全部层'}
+          </span>
+          <span className="focus-key">F</span>
+        </button>
+
+        {focusMode && focusStats && (
+          <p className="focus-stats">
+            {activeLayer ? activeLayer.name : '—'} · 节点 {focusStats.nodes} · 层内连线{' '}
+            {focusStats.intra}
+            {focusStats.cross > 0 && (
+              <>
+                {' '}· <span className="hidden-count">已隐藏 {focusStats.cross} 条跨层连线</span>
+              </>
+            )}
+          </p>
+        )}
+
         <div className="layer-list">
           {diagram.layers.length === 0 && (
             <p className="empty">暂无图层，点击"添加层"开始</p>
@@ -175,6 +220,7 @@ export default function Panel() {
           <li>滚轮：缩放</li>
           <li>先选中激活层，再在网格上放置节点</li>
           <li>连线工具支持跨层（同层 L 形、跨层垂直+水平）</li>
+          <li>按 F 切换「只看当前层」，聚焦时锁定俯视视角（仍可平移、缩放），仅显示层内连线</li>
         </ul>
       </section>
     </div>

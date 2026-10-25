@@ -62,9 +62,13 @@ interface State {
   selectedNodeId: string | null;
   connectFromNodeId: string | null;
   nodeType: NodeType;
+  /** 单层聚焦：只渲染激活层，隐藏其他层与跨层连线 */
+  focusMode: boolean;
   // actions
   setTool: (t: Tool) => void;
   setActiveLayer: (id: string | null) => void;
+  toggleFocusMode: () => void;
+  setFocusMode: (v: boolean) => void;
   setNodeType: (t: NodeType) => void;
   selectNode: (id: string | null) => void;
   addNode: (layerId: string, gx: number, gz: number) => void;
@@ -89,11 +93,35 @@ export const useStore = create<State>((set, get) => ({
   selectedNodeId: null,
   connectFromNodeId: null,
   nodeType: 'service',
+  focusMode: false,
 
   setTool: (t) => set({ tool: t, connectFromNodeId: null, selectedNodeId: null }),
   setActiveLayer: (id) => set({ activeLayerId: id }),
   setNodeType: (t) => set({ nodeType: t }),
   selectNode: (id) => set({ selectedNodeId: id }),
+
+  // 开启聚焦时若没有激活层，自动落到第一层，避免出现空场景
+  toggleFocusMode: () => {
+    const { focusMode, activeLayerId, diagram } = get();
+    if (focusMode) {
+      set({ focusMode: false });
+      return;
+    }
+    const target = activeLayerId ?? diagram.layers[0]?.id ?? null;
+    if (!target) return;
+    set({ focusMode: true, activeLayerId: target });
+  },
+
+  setFocusMode: (v) => {
+    if (!v) {
+      set({ focusMode: false });
+      return;
+    }
+    const { activeLayerId, diagram } = get();
+    const target = activeLayerId ?? diagram.layers[0]?.id ?? null;
+    if (!target) return;
+    set({ focusMode: true, activeLayerId: target });
+  },
 
   addNode: (layerId, gx, gz) => {
     const { diagram } = get();
@@ -193,18 +221,24 @@ export const useStore = create<State>((set, get) => ({
   },
 
   removeLayer: (layerId) => {
-    const { diagram } = get();
+    const { diagram, activeLayerId } = get();
     const layer = diagram.layers.find(l => l.id === layerId);
     if (!layer) return;
     const nodeIds = new Set(layer.nodes.map(n => n.id));
-    set({
+    const patch: Partial<State> = {
       diagram: {
         layers: diagram.layers.filter(l => l.id !== layerId),
         connections: diagram.connections.filter(
           c => !nodeIds.has(c.fromNodeId) && !nodeIds.has(c.toNodeId)
         ),
       },
-    });
+    };
+    // 删掉的正好是聚焦层：退出聚焦，避免剩下一个空场景
+    if (activeLayerId === layerId) {
+      patch.activeLayerId = null;
+      patch.focusMode = false;
+    }
+    set(patch);
   },
 
   renameLayer: (layerId, name) => {
@@ -238,11 +272,15 @@ export const useStore = create<State>((set, get) => ({
     set({ diagram: { ...diagram, layers } });
   },
 
-  loadDiagram: (d) => set({ diagram: d, activeLayerId: null, selectedNodeId: null, connectFromNodeId: null }),
+  loadDiagram: (d) => set({
+    diagram: d, activeLayerId: null, selectedNodeId: null,
+    connectFromNodeId: null, focusMode: false,
+  }),
 
   clearDiagram: () => set({
     diagram: { layers: [], connections: [] },
-    activeLayerId: null, selectedNodeId: null, connectFromNodeId: null,
+    activeLayerId: null, selectedNodeId: null,
+    connectFromNodeId: null, focusMode: false,
   }),
 }));
 
